@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dual Pivot Quick Sort Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .element-transition {
+            transition: all 0.5s ease-in-out;
+        }
+        .pivot-glow {
+            animation: glow 1s infinite alternate;
+        }
+        @keyframes glow {
+            from { box-shadow: 0 0 5px #ff5722; }
+            to { box-shadow: 0 0 15px #ff5722; }
+        }
+        .partition-transition {
+            transition: all 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-6xl mx-auto bg-white rounded-xl shadow-lg p-6">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">Dual Pivot Quick Sort Visualizer</h1>
+        
+        <div class="flex gap-4 mb-6 flex-wrap">
+            <input type="text" id="arrayInput" placeholder="Enter numbers (e.g., 5,3,9)" 
+                   class="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button onclick="startSorting()" 
+                    class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors">
+                Start Sorting
+            </button>
+            <button onclick="generateRandomArray()" 
+                    class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors">
+                Random Array
+            </button>
+            <button onclick="pauseResume()" id="pauseBtn" 
+                    class="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 transition-colors">
+                Pause
+            </button>
+            <button onclick="reset()" 
+                    class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors">
+                Reset
+            </button>
+        </div>
+
+        <div id="visualization" class="space-y-8">
+            <div class="bg-blue-50 p-4 rounded-lg">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-blue-600">Time Elapsed:</h3>
+                    <span id="timer" class="text-blue-600 font-mono">0ms</span>
+                </div>
+            </div>
+
+            <div id="mainVisualization" class="relative min-h-[400px]">
+                <!-- Array Visualization -->
+                <div id="arrayVisualization" class="flex flex-wrap gap-4 p-4 bg-gray-50 rounded-lg element-transition"></div>
+                
+                <!-- Graph Visualization -->
+                <canvas id="canvas" class="hidden w-full h-[400px] rounded-lg"></canvas>
+            </div>
+
+            <div id="partitionContainer" class="grid grid-cols-3 gap-4 hidden">
+                <div class="partition-column bg-green-50 p-4 rounded-lg partition-transition">
+                    <h4 class="text-green-600 font-medium mb-2">Left Partition</h4>
+                    <div id="leftPartition" class="flex flex-wrap gap-2"></div>
+                </div>
+                <div class="partition-column bg-blue-50 p-4 rounded-lg partition-transition">
+                    <h4 class="text-blue-600 font-medium mb-2">Middle Partition</h4>
+                    <div id="middlePartition" class="flex flex-wrap gap-2"></div>
+                </div>
+                <div class="partition-column bg-red-50 p-4 rounded-lg partition-transition">
+                    <h4 class="text-red-600 font-medium mb-2">Right Partition</h4>
+                    <div id="rightPartition" class="flex flex-wrap gap-2"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let array = [];
+        let sortGenerator = null;
+        let isPaused = true;
+        let animationFrameId = null;
+        let startTime = 0;
+        let delay = 300;
+        let useGraphView = false;
+
+        // Initialize canvas
+        canvas.width = canvas.offsetWidth;
+        canvas.height = 400;
+
+        function* dualPivotQuickSort(arr, left = 0, right = arr.length - 1) {
+            if (left >= right) return;
+
+            // Swap pivots if needed
+            if (arr[left] > arr[right]) {
+                [arr[left], arr[right]] = [arr[right], arr[left]];
+                yield { type: 'swap', arr: [...arr], indexes: [left, right], pivots: [left, right] };
+            }
+
+            const pivot1 = arr[left];
+            const pivot2 = arr[right];
+            let lt = left + 1;
+            let gt = right - 1;
+            let i = left + 1;
+
+            while (i <= gt) {
+                yield { type: 'compare', arr: [...arr], indexes: [i], pivots: [left, right] };
+
+                if (arr[i] < pivot1) {
+                    [arr[i], arr[lt]] = [arr[lt], arr[i]];
+                    yield { type: 'swap', arr: [...arr], indexes: [i, lt], pivots: [left, right] };
+                    lt++;
+                    i++;
+                } else if (arr[i] > pivot2) {
+                    [arr[i], arr[gt]] = [arr[gt], arr[i]];
+                    yield { type: 'swap', arr: [...arr], indexes: [i, gt], pivots: [left, right] };
+                    gt--;
+                } else {
+                    i++;
+                }
+            }
+
+            // Final positioning
+            lt--;
+            gt++;
+            [arr[left], arr[lt]] = [arr[lt], arr[left]];
+            [arr[right], arr[gt]] = [arr[gt], arr[right]];
+            yield { type: 'final-swap', arr: [...arr], indexes: [lt, gt], pivots: [left, right] };
+
+            yield* dualPivotQuickSort(arr, left, lt - 1);
+            yield* dualPivotQuickSort(arr, lt + 1, gt - 1);
+            yield* dualPivotQuickSort(arr, gt + 1, right);
+        }
+
+        function updateVisualization(step) {
+            if (array.length > 10 || useGraphView) {
+                drawGraph(step.arr, step);
+                document.getElementById('partitionContainer').classList.add('hidden');
+            } else {
+                updateArrayVisualization(step);
+                updatePartitions(step);
+                document.getElementById('partitionContainer').classList.remove('hidden');
+            }
+        }
+
+        function updateArrayVisualization(step) {
+            const container = document.getElementById('arrayVisualization');
+            container.innerHTML = step.arr.map((num, i) => {
+                const classes = [
+                    'w-12 h-12 rounded-lg flex items-center justify-center font-bold element-transition',
+                    step.pivots?.includes(i) ? 'bg-orange-500 text-white pivot-glow' :
+                    step.indexes?.includes(i) ? 'bg-purple-500 text-white' : 'bg-blue-500 text-white'
+                ].join(' ');
+                return `<div class="${classes}">${num}</div>`;
+            }).join('');
+        }
+
+        function updatePartitions(step) {
+            const [leftPivot, rightPivot] = step.pivots?.map(i => step.arr[i]) || [];
+            if (!leftPivot || !rightPivot) return;
+
+            const leftPartition = step.arr.filter(n => n < leftPivot);
+            const middlePartition = step.arr.filter(n => n >= leftPivot && n <= rightPivot);
+            const rightPartition = step.arr.filter(n => n > rightPivot);
+
+            document.getElementById('leftPartition').innerHTML = createPartitionElements(leftPartition, 'green-500');
+            document.getElementById('middlePartition').innerHTML = createPartitionElements(middlePartition, 'blue-500');
+            document.getElementById('rightPartition').innerHTML = createPartitionElements(rightPartition, 'red-500');
+        }
+
+        function createPartitionElements(arr, color) {
+            return arr.map(num => `
+                <div class="bg-${color} text-white w-10 h-10 rounded-lg flex items-center justify-center">
+                    ${num}
+                </div>
+            `).join('');
+        }
+
+        function drawGraph(arr, step) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const barWidth = canvas.width / arr.length;
+            const maxValue = Math.max(...arr);
+            const scale = canvas.height / maxValue;
+
+            arr.forEach((value, i) => {
+                ctx.fillStyle = step.pivots?.includes(i) ? '#FF5722' :
+                              step.indexes?.includes(i) ? '#2196F3' : '#4CAF50';
+                const barHeight = value * scale;
+                ctx.fillRect(i * barWidth, canvas.height - barHeight, barWidth - 1, barHeight);
+            });
+        }
+
+        function startSorting() {
+            if (sortGenerator && !isPaused) return;
+            
+            const input = arrayInput.value.split(',').map(Number).filter(n => !isNaN(n));
+            if (input.length === 0) return alert('Please enter valid numbers!');
+            
+            array = input.slice(0, 15);
+            arrayInput.value = array.join(',');
+            useGraphView = array.length > 10;
+            
+            canvas.classList.toggle('hidden', !useGraphView);
+            document.getElementById('arrayVisualization').classList.toggle('hidden', useGraphView);
+            
+            sortGenerator = dualPivotQuickSort([...array]);
+            isPaused = false;
+            startTime = performance.now();
+            processSortStep();
+        }
+
+        function processSortStep() {
+            if (isPaused || !sortGenerator) return;
+
+            const { value: step, done } = sortGenerator.next();
+            if (done) {
+                isPaused = true;
+                document.getElementById('pauseBtn').textContent = 'Pause';
+                return;
+            }
+
+            updateVisualization(step);
+            document.getElementById('timer').textContent = 
+                `${(performance.now() - startTime).toFixed(1)}ms`;
+
+            animationFrameId = setTimeout(() => {
+                requestAnimationFrame(processSortStep);
+            }, delay);
+        }
+
+        function pauseResume() {
+            if (!sortGenerator) return;
+            isPaused = !isPaused;
+            document.getElementById('pauseBtn').textContent = isPaused ? 'Resume' : 'Pause';
+            if (!isPaused) processSortStep();
+        }
+
+        function generateRandomArray() {
+            const size = Math.floor(Math.random() * 15) + 5;
+            array = Array.from({ length: size }, () => Math.floor(Math.random() * 90) + 10);
+            arrayInput.value = array.join(',');
+            reset();
+        }
+
+        function reset() {
+            isPaused = true;
+            clearTimeout(animationFrameId);
+            sortGenerator = null;
+            document.getElementById('timer').textContent = '0ms';
+            canvas.classList.add('hidden');
+            document.getElementById('arrayVisualization').classList.remove('hidden');
+            document.getElementById('partitionContainer').classList.add('hidden');
+            updateArrayVisualization({ arr: array });
+        }
+
+        // Initial setup
+        generateRandomArray();
+    </script>
+</body>
+</html>
